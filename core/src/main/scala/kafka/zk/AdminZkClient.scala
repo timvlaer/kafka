@@ -230,7 +230,21 @@ class AdminZkClient(zkClient: KafkaZkClient) extends Logging {
       createOrUpdateTopicPartitionAssignmentPathInZK(topic, proposedAssignment, update = true)
     }
     proposedAssignment
+  }
 
+  def changeReplicationFactor(topic: String,
+                              existingAssignment: Map[Int, Seq[Int]],
+                              allBrokers: Seq[BrokerMetadata],
+                              replicationFactor: Int = 1,
+                              replicaAssignment: Option[Map[Int, Seq[Int]]] = None,
+                              validateOnly: Boolean = false): Map[Int, Seq[Int]] = {
+
+    val replicationFactorDelta = replicationFactor - existingAssignment(0).size
+    if (replicationFactorDelta == 0) {
+      warn(s"The replication factor of topic $topic is already $replicationFactor.")
+      return existingAssignment
+    }
+    proposedAssignment
   }
 
   private def validateReplicaAssignment(replicaAssignment: Map[Int, Seq[Int]],

@@ -161,6 +161,25 @@ object TopicCommand extends Logging {
         adminZkClient.addPartitions(topic, existingAssignment, allBrokers, nPartitions, newAssignment)
         println("Adding partitions succeeded!")
       }
+
+      if(opts.options.has(opts.replicationFactorOpt)) {
+        if (topic == Topic.GROUP_METADATA_TOPIC_NAME) {
+          throw new IllegalArgumentException("The replication factor for the offsets topic cannot be changed.")
+        }
+
+        val nReplicas = opts.options.valueOf(opts.replicationFactorOpt).intValue
+        val existingAssignment = zkClient.getReplicaAssignmentForTopics(immutable.Set(topic)).map {
+          case (topicPartition, replicas) => topicPartition.partition -> replicas
+        }
+        if (existingAssignment.isEmpty)
+          throw new InvalidTopicException(s"The topic $topic does not exist")
+
+
+        val allBrokers = adminZkClient.getBrokerMetadatas()
+
+        adminZkClient.changeReplicationFactor(topic, existingAssignment, allBrokers, nReplicas, newAssignment)
+        println("Changing replication factor succeeded!")
+      }
     }
   }
 
