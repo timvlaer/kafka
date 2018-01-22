@@ -148,6 +148,40 @@ object AdminUtils extends Logging with AdminUtilities {
     }
   }
 
+  def addReplicasToBrokers(brokerMetadatas: Seq[BrokerMetadata],
+                           currentSituation: Map[Int, Seq[Int]],
+                           newReplicationFactor: Int,
+                           fixedStartIndex:Int = 0): Map[Int, Seq[Int]] = {
+    if(newReplicationFactor <= currentSituation.values.last.length)
+      throw new InvalidReplicationFactorException("Replication factor must be larger than current number.")
+    if (newReplicationFactor > brokerMetadatas.size)
+      throw new InvalidReplicationFactorException(s"Replication factor: $newReplicationFactor larger than available brokers: ${brokerMetadatas.size}.")
+
+    //TODO add rack aware variant
+
+    val brokerArray = brokerMetadatas.map(_.id).toArray
+
+    val ret = mutable.Map[Int, Seq[Int]]()
+    val startIndex = if (fixedStartIndex >= 0) fixedStartIndex else rand.nextInt(brokerMetadatas.length)
+
+    currentSituation.foreach {
+      case (partitionId, currentReplicaList) => {
+        var replicaIndex = (partitionId + startIndex) % brokerArray.length
+        val newReplicaList = mutable.ArrayBuffer[Int]() ++ currentReplicaList
+        while(newReplicaList.length < newReplicationFactor) {
+          val candidateReplica = brokerArray(replicaIndex)
+          if(!newReplicaList.contains(candidateReplica)) {
+            newReplicaList += candidateReplica
+          }
+          replicaIndex = (replicaIndex + 1) % brokerArray.length
+        }
+
+        ret.put(partitionId, newReplicaList)
+      }
+    }
+    ret
+  }
+
   private def assignReplicasToBrokersRackUnaware(nPartitions: Int,
                                                  replicationFactor: Int,
                                                  brokerList: Seq[Int],

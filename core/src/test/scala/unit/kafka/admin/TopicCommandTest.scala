@@ -190,6 +190,35 @@ class TopicCommandTest extends ZooKeeperTestHarness with Logging with RackAwareT
   }
 
   @Test
+  def testAlterTopic() {
+    val brokers = List(0,1,2,3,4)
+    TestUtils.createBrokersInZk(zkClient, brokers)
+
+    val numPartitions = 18
+    val replicationFactor = 3
+    val createOpts = new TopicCommandOptions(Array(
+      "--partitions", numPartitions.toString,
+      "--replication-factor", replicationFactor.toString,
+      "--topic", "foo"))
+    TopicCommand.createTopic(zkClient, createOpts)
+
+
+    val alteredReplicationFactor = 4
+    // verify that adding partitions will also be rack aware
+    val alterOpts = new TopicCommandOptions(Array(
+      "--replication-factor", alteredReplicationFactor.toString,
+      "--topic", "foo"))
+    TopicCommand.alterTopic(zkClient, alterOpts)
+    val assignment = zkClient.getReplicaAssignmentForTopics(Set("foo")).map { case (tp, replicas) =>
+      tp.partition -> replicas
+    }
+
+    //TODO assert result
+  }
+
+
+
+  @Test
   def testDescribeAndListTopicsMarkedForDeletion() {
     val brokers = List(0)
     val topic = "testtopic"

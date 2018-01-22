@@ -161,6 +161,44 @@ object TopicCommand extends Logging {
         adminZkClient.addPartitions(topic, existingAssignment, allBrokers, nPartitions, newAssignment)
         println("Adding partitions succeeded!")
       }
+
+      if(opts.options.has(opts.replicationFactorOpt)) {
+        if (topic == Topic.GROUP_METADATA_TOPIC_NAME) {
+          throw new IllegalArgumentException("The replication factor for the offsets topic cannot be changed.")
+        }
+
+        val newReplicationFactor = opts.options.valueOf(opts.replicationFactorOpt).intValue
+        val existingAssignment = zkClient.getReplicaAssignmentForTopics(immutable.Set(topic)).map {
+          case (topicPartition, replicas) => topicPartition.partition -> replicas
+        }
+        if (existingAssignment.isEmpty)
+          throw new InvalidTopicException(s"The topic $topic does not exist")
+
+        val currentReplicationFactor = existingAssignment.values.last.length
+
+        if (currentReplicationFactor != newReplicationFactor) {
+          val allBrokers = adminZkClient.getBrokerMetadatas()
+
+          if (newReplicationFactor <= 0)
+            throw new IllegalArgumentException("The replication factor cannot be negative.")
+          if (newReplicationFactor > allBrokers.length)
+            throw new IllegalArgumentException("The replication factor should be smaller or equal to the number of brokers.")
+          if (newReplicationFactor == currentReplicationFactor)
+            throw new IllegalArgumentException(s"The replication factor already is $currentReplicationFactor for topic $topic.")
+
+          if (newReplicationFactor < currentReplicationFactor) {
+            val newAssignment = existingAssignment.mapValues(replicas => replicas.take(newReplicationFactor))
+            adminZkClient.changeReplicationFactor(topic, existingAssignment, allBrokers, newReplicationFactor, newAssignment)
+          } else {
+            val newAssignment = AdminUtils.addReplicasToBrokers(allBrokers, existingAssignment, newReplicationFactor)
+            adminZkClient.changeReplicationFactor(topic, existingAssignment, allBrokers, newReplicationFactor, newAssignment)
+          }
+
+          println("Changing replication factor succeeded!")
+        } else {
+          println(s"Topic $topic already has replication factor $newReplicationFactor!")
+        }
+      }
     }
   }
 
@@ -331,7 +369,7 @@ object TopicCommand extends Logging {
                            .withRequiredArg
                            .describedAs("# of partitions")
                            .ofType(classOf[java.lang.Integer])
-    val replicationFactorOpt = parser.accepts("replication-factor", "The replication factor for each partition in the topic being created.")
+    val replicationFactorOpt = parser.accepts("replication-factor", "The replication factor for each partition in the topic being created or altered.")
                            .withRequiredArg
                            .describedAs("replication factor")
                            .ofType(classOf[java.lang.Integer])
@@ -366,11 +404,11 @@ object TopicCommand extends Logging {
         CommandLineUtils.checkRequiredArgs(parser, options, topicOpt)
 
       // check invalid args
-      CommandLineUtils.checkInvalidArgs(parser, options, configOpt, allTopicLevelOpts -- Set(alterOpt, createOpt))
+      CommandLineUtils.checkInvalidArgs(parser, options, configOpt, allTopicLevelOpts -- Set(createOpt, alterOpt))
       CommandLineUtils.checkInvalidArgs(parser, options, deleteConfigOpt, allTopicLevelOpts -- Set(alterOpt))
-      CommandLineUtils.checkInvalidArgs(parser, options, partitionsOpt, allTopicLevelOpts -- Set(alterOpt, createOpt))
-      CommandLineUtils.checkInvalidArgs(parser, options, replicationFactorOpt, allTopicLevelOpts -- Set(createOpt))
-      CommandLineUtils.checkInvalidArgs(parser, options, replicaAssignmentOpt, allTopicLevelOpts -- Set(createOpt,alterOpt))
+      CommandLineUtils.checkInvalidArgs(parser, options, partitionsOpt, allTopicLevelOpts -- Set(createOpt, alterOpt))
+      CommandLineUtils.checkInvalidArgs(parser, options, replicationFactorOpt, allTopicLevelOpts -- Set(createOpt, alterOpt))
+      CommandLineUtils.checkInvalidArgs(parser, options, replicaAssignmentOpt, allTopicLevelOpts -- Set(createOpt, alterOpt))
       if(options.has(createOpt))
           CommandLineUtils.checkInvalidArgs(parser, options, replicaAssignmentOpt, Set(partitionsOpt, replicationFactorOpt))
       CommandLineUtils.checkInvalidArgs(parser, options, reportUnderReplicatedPartitionsOpt,
